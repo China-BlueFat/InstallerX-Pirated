@@ -1,6 +1,7 @@
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Properties
+import com.android.build.api.variant.impl.VariantOutputImpl
 
 // Get git commit hash safely, compatible with configuration cache
 val gitHash: String = try {
@@ -52,7 +53,7 @@ android {
         // If you use InstallerX source code, package it into apk or other installation package format
         // Please change the applicationId to one that does not conflict with any official release.
         applicationId = project.findProperty("APP_ID") as String?
-            ?: "com.rosan.installer.x.revived"
+            ?: "com.zanye.installerx"
         namespace = "com.rosan.installer"
         minSdk = 26
         targetSdk = 37
@@ -271,4 +272,15 @@ dependencies {
     implementation(libs.focus.api)
 
     implementation(libs.materialKolor)
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.outputs.forEach { output ->
+            val vName = output.versionName.orNull ?: "0.0.0"
+            val vCode = output.versionCode.orNull ?: 0
+            val outputImpl = output as VariantOutputImpl
+            outputImpl.outputFileName.set("InstallerX-${variant.name}-v${vName}(${vCode}).apk")
+        }
+    }
 }

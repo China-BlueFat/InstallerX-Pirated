@@ -1,11 +1,11 @@
 pluginManagement {
     repositories {
         mavenLocal()
-        // maven { setUrl("https://maven.aliyun.com/repository/public/") }
-        // maven { setUrl("https://repo.huaweicloud.com/repository/maven/") }
         gradlePluginPortal()
         google()
         mavenCentral()
+        maven { setUrl("https://maven.aliyun.com/repository/public/") }
+        maven { setUrl("https://repo.huaweicloud.com/repository/maven/") }
         maven { setUrl("https://jitpack.io") }
         // maven { setUrl("https://maven.scijava.org/content/repositories/public/") }
     }
@@ -18,10 +18,10 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         mavenLocal()
-        // maven { setUrl("https://maven.aliyun.com/repository/public/") }
-        // maven { setUrl("https://repo.huaweicloud.com/repository/maven/") }
         google()
         mavenCentral()
+        maven { setUrl("https://maven.aliyun.com/repository/public/") }
+        maven { setUrl("https://repo.huaweicloud.com/repository/maven/") }
         maven { setUrl("https://jitpack.io") }
         // maven { setUrl("https://maven.scijava.org/content/repositories/public/") }
         // GitHub Packages (compose-miuix-ui/miuix)
@@ -40,15 +40,19 @@ dependencyResolutionManagement {
         //
         // This configuration is intentionally placed in settings.gradle.kts
         // to work with RepositoriesMode.FAIL_ON_PROJECT_REPOS.
-        maven {
-            url = uri("https://maven.pkg.github.com/compose-miuix-ui/miuix")
-            credentials {
-                username = providers.gradleProperty("gpr.user")
-                    .orElse(System.getenv("GITHUB_ACTOR"))
-                    .get()
-                password = providers.gradleProperty("gpr.key")
-                    .orElse(System.getenv("GITHUB_TOKEN"))
-                    .get()
+        val gprUser = providers.gradleProperty("gpr.user")
+            .orElse(providers.environmentVariable("GITHUB_ACTOR"))
+            .getOrElse("")
+        val gprKey = providers.gradleProperty("gpr.key")
+            .orElse(providers.environmentVariable("GITHUB_TOKEN"))
+            .getOrElse("")
+        if (gprUser.isNotBlank() && gprKey.isNotBlank()) {
+            maven {
+                url = uri("https://maven.pkg.github.com/compose-miuix-ui/miuix")
+                credentials {
+                    username = gprUser
+                    password = gprKey
+                }
             }
         }
     }

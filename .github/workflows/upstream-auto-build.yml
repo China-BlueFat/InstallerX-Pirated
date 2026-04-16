@@ -1,0 +1,91 @@
+name: Upstream Auto Build
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # 每30分钟检查一次（UTC）
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}   # 用PAT推送分支
+
+      - name: Check upstream changes
+        id: check
+        shell: bash
+        run: |
+          set -e
+          git remote add upstream https://github.com/wxxsfxyzm/InstallerX-Revived.git || true
+          git fetch upstream main
+          git fetch origin auto-build || true
+
+          UP_SHA=$(git rev-parse upstream/main)
+          LOCAL_SHA=$(git rev-parse origin/auto-build 2>/dev/null || echo "")
+
+          echo "up_sha=$UP_SHA" >> "$GITHUB_OUTPUT"
+          if [ "$UP_SHA" = "$LOCAL_SHA" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync auto-build branch
+        if: steps.check.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -e
+          git checkout -B auto-build upstream/main
+          git push origin auto-build --force
+
+      - name: Apply your build config
+        if: steps.check.outputs.changed == 'true'
+        shell: bash
+        run: |
+          # 这里放你自己的“构建配置修改”命令
+          # 示例：替换应用名（按你实际文件改）
+          # sed -i 's#<string name="app_name">.*</string>#<string name="app_name">My InstallerX</string>#' app/src/main/res/values/strings.xml
+          :
+      
+      - name: Setup JDK
+        if: steps.check.outputs.changed == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Setup Android SDK
+        if: steps.check.outputs.changed == 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+
+      - name: Configure GitHub Packages credentials
+        if: steps.check.outputs.changed == 'true'
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "gpr.user=${{ secrets.GPR_USER }}"
+            echo "gpr.key=${{ secrets.GPR_KEY }}"
+          } >> ~/.gradle/gradle.properties
+
+      - name: Build Release APK
+        if: steps.check.outputs.changed == 'true'
+        run: ./gradlew :app:assembleOnlineStableRelease --no-configuration-cache --refresh-dependencies
+
+      - name: Upload APK
+        if: steps.check.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: InstallerX-${{ steps.check.outputs.up_sha }}
+          path: app/build/outputs/apk/onlineStable/release/*.apk
