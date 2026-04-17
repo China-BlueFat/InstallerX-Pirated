@@ -179,6 +179,10 @@ jobs:
             echo "gpr.key=${{ secrets.GPR_KEY }}"
           } >> ~/.gradle/gradle.properties
 
+      - name: Make gradlew executable
+        if: steps.check.outputs.should_build == 'true'
+        run: chmod +x ./gradlew
+
       - name: Build Release APK
         if: steps.check.outputs.should_build == 'true'
         run: |
