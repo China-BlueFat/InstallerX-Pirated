@@ -104,7 +104,6 @@ jobs:
             "app/src/main/res/values/strings.xml"
             "gradle/wrapper/gradle-wrapper.properties"
             "settings.gradle.kts"
-            ".github/workflows/upstream-auto-build.yml"
           )
 
           for p in "${CUSTOM_PATHS[@]}"; do
@@ -124,6 +123,9 @@ jobs:
 
           echo "${{ steps.check.outputs.up_sha }}" > .upstream-sync-sha
           git add -A
+          # Do not include workflow file updates in auto-build commits, otherwise
+          # GITHUB_TOKEN push may be rejected with missing "workflows" permission.
+          git reset .github/workflows || true
           if git diff --cached --quiet; then
             echo "No overlay changes to commit."
           else
