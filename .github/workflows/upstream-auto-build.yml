@@ -89,6 +89,7 @@ jobs:
           UP_SHA="$(git rev-list -n 1 "$UP_RELEASE_TAG")"
           BUILD_RELEASE_TAG="auto-build-release-${UP_RELEASE_ID}"
           EXPECTED_APK_NAME="InstallerX-${UP_SHA}.apk"
+          PREVIEW_VERSION_NAME="$(date -u +'%y.%m').${UP_SHA:0:7}"
 
           EXISTING_BUILD_JSON=""
           if EXISTING_BUILD_JSON="$(curl -fsSL \
@@ -133,6 +134,7 @@ jobs:
           echo "expected_apk_name=$EXPECTED_APK_NAME" >> "$GITHUB_OUTPUT"
           echo "build_release_present=$BUILD_RELEASE_PRESENT" >> "$GITHUB_OUTPUT"
           echo "asset_already_published=$ASSET_ALREADY_PUBLISHED" >> "$GITHUB_OUTPUT"
+          echo "preview_version_name=$PREVIEW_VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
           echo "force=$FORCE" >> "$GITHUB_OUTPUT"
           echo "should_build=$SHOULD_BUILD" >> "$GITHUB_OUTPUT"
@@ -305,10 +307,10 @@ jobs:
         if: steps.check.outputs.should_build == 'true'
         run: chmod +x ./gradlew
 
-      - name: Build Release APK
+      - name: Build Preview APK
         if: steps.check.outputs.should_build == 'true'
         run: |
-          ./gradlew :app:assembleOnlineStableRelease -PAPP_ID=com.zanye.installerx --no-configuration-cache --refresh-dependencies --stacktrace
+          ./gradlew :app:assembleOnlinePreviewRelease -PAPP_ID=com.zanye.installerx -PVERSION_NAME=${{ steps.check.outputs.preview_version_name }} --no-configuration-cache --refresh-dependencies --stacktrace
 
       - name: Prepare release asset
         id: prepare_release
@@ -316,9 +318,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK_PATH="$(find app/build/outputs/apk/onlineStable/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          APK_PATH="$(find app/build/outputs/apk/onlinePreview/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
           if [[ -z "$APK_PATH" ]]; then
-            echo "::error::No APK found under app/build/outputs/apk/onlineStable/release."
+            echo "::error::No APK found under app/build/outputs/apk/onlinePreview/release."
             exit 1
           fi
           mkdir -p release-assets
@@ -334,18 +336,19 @@ jobs:
         with:
           token: ${{ secrets.GH_PAT != '' && secrets.GH_PAT || github.token }}
           tag_name: ${{ steps.check.outputs.build_release_tag }}
-          name: InstallerX Auto Build ${{ steps.check.outputs.up_release_tag }}
+          name: InstallerX Auto Preview ${{ steps.check.outputs.preview_version_name }}
           body: |
             Automated APK build for ${{ github.repository }}.
 
             Upstream release: ${{ steps.check.outputs.up_release_tag }}
             Upstream release page: ${{ steps.check.outputs.up_release_url }}
             Upstream SHA: ${{ steps.check.outputs.up_sha }}
+            Preview version: ${{ steps.check.outputs.preview_version_name }}
             Workflow commit: ${{ github.sha }}
           target_commitish: ${{ github.sha }}
           files: ${{ steps.prepare_release.outputs.apk_path }}
           fail_on_unmatched_files: true
-          prerelease: false
+          prerelease: true
 
       - name: Notify WeChat via Server酱 (optional)
         if: steps.check.outputs.should_build == 'true' && success()
@@ -386,8 +389,8 @@ jobs:
             print(first_url)
             PY
             )"
-            TITLE="InstallerX 自动构建成功"
-            DESP=$'你的 InstallerX 自动构建已完成。\n\n'"仓库: ${{ github.repository }}"$'\n'"上游Release: ${{ steps.check.outputs.up_release_tag }}"$'\n'"上游SHA: ${{ steps.check.outputs.up_sha }}"$'\n'"Release 链接: ${RELEASE_URL}"$'\n'"APK 下载: ${APK_URL}"$'\n'"APK 文件: ${APK_NAME}"
+            TITLE="InstallerX 自动预览构建成功"
+            DESP=$'你的 InstallerX 自动预览构建已完成。\n\n'"仓库: ${{ github.repository }}"$'\n'"上游Release: ${{ steps.check.outputs.up_release_tag }}"$'\n'"预览版本: ${{ steps.check.outputs.preview_version_name }}"$'\n'"上游SHA: ${{ steps.check.outputs.up_sha }}"$'\n'"Release 链接: ${RELEASE_URL}"$'\n'"APK 下载: ${APK_URL}"$'\n'"APK 文件: ${APK_NAME}"
             curl -fsS -X POST "https://sctapi.ftqq.com/${SERVERCHAN_SENDKEY}.send" \
               --data-urlencode "title=${TITLE}" \
               --data-urlencode "desp=${DESP}"
