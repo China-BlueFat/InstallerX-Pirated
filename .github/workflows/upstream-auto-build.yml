@@ -39,10 +39,26 @@ jobs:
           git fetch upstream --tags --force
           git fetch origin main
 
-          RELEASE_JSON="$(curl -fsSL \
+          RELEASES_JSON="$(curl -fsSL \
             -H 'Accept: application/vnd.github+json' \
             -H "Authorization: Bearer ${API_TOKEN}" \
-            https://api.github.com/repos/wxxsfxyzm/InstallerX-Revived/releases/latest)"
+            'https://api.github.com/repos/wxxsfxyzm/InstallerX-Revived/releases?per_page=20')"
+          RELEASE_JSON="$(RELEASES_JSON="$RELEASES_JSON" python3 - <<'PY'
+          import json
+          import os
+
+          releases = json.loads(os.environ["RELEASES_JSON"])
+          candidates = [release for release in releases if not release.get("draft")]
+          if not candidates:
+              raise SystemExit("No non-draft upstream release found from GitHub API response.")
+
+          def sort_key(release):
+              return release.get("published_at") or release.get("created_at") or ""
+
+          latest = max(candidates, key=sort_key)
+          print(json.dumps(latest))
+          PY
+          )"
 
           UP_RELEASE_ID="$(RELEASE_JSON="$RELEASE_JSON" python3 - <<'PY'
           import json
