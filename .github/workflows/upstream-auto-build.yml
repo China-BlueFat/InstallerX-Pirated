@@ -41,48 +41,51 @@ jobs:
 
           RELEASES_JSON_FILE="$(mktemp)"
           RELEASE_META_FILE="$(mktemp)"
+          SELECT_RELEASE_PY="$(mktemp)"
           curl -fsSL \
             -H 'Accept: application/vnd.github+json' \
             -H "Authorization: Bearer ${API_TOKEN}" \
             'https://api.github.com/repos/wxxsfxyzm/InstallerX-Revived/releases?per_page=20' \
             -o "${RELEASES_JSON_FILE}"
-          python3 - "${RELEASES_JSON_FILE}" "${RELEASE_META_FILE}" <<'PY'
-          import json
-          import shlex
-          import sys
-          from pathlib import Path
-
-          releases = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-          candidates = [release for release in releases if not release.get("draft")]
-          if not candidates:
-              raise SystemExit("No non-draft upstream release found from GitHub API response.")
-
-          def sort_key(release):
-              return release.get("published_at") or release.get("created_at") or ""
-
-          latest = max(candidates, key=sort_key)
-          release_id = latest.get("id")
-          release_tag = (latest.get("tag_name") or "").strip()
-          release_name = (latest.get("name") or "").replace("\r", " ").replace("\n", " ").strip()
-          release_url = (latest.get("html_url") or "").strip()
-
-          if not release_id:
-              raise SystemExit("Missing release id from GitHub API response.")
-          if not release_tag:
-              raise SystemExit("Missing release tag_name from GitHub API response.")
-          if not release_url:
-              raise SystemExit("Missing release html_url from GitHub API response.")
-
-          meta = {
-              "UP_RELEASE_ID": str(release_id),
-              "UP_RELEASE_TAG": release_tag,
-              "UP_RELEASE_NAME": release_name,
-              "UP_RELEASE_URL": release_url,
-          }
-          with Path(sys.argv[2]).open("w", encoding="utf-8") as fh:
-              for key, value in meta.items():
-                  fh.write(f"{key}={shlex.quote(value)}\n")
-          PY
+          printf '%s\n' \
+            'import json' \
+            'import shlex' \
+            'import sys' \
+            'from pathlib import Path' \
+            '' \
+            'releases = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))' \
+            'candidates = [release for release in releases if not release.get("draft")]' \
+            'if not candidates:' \
+            '    raise SystemExit("No non-draft upstream release found from GitHub API response.")' \
+            '' \
+            'def sort_key(release):' \
+            '    return release.get("published_at") or release.get("created_at") or ""' \
+            '' \
+            'latest = max(candidates, key=sort_key)' \
+            'release_id = latest.get("id")' \
+            'release_tag = (latest.get("tag_name") or "").strip()' \
+            'release_name = (latest.get("name") or "").replace("\r", " ").replace("\n", " ").strip()' \
+            'release_url = (latest.get("html_url") or "").strip()' \
+            '' \
+            'if not release_id:' \
+            '    raise SystemExit("Missing release id from GitHub API response.")' \
+            'if not release_tag:' \
+            '    raise SystemExit("Missing release tag_name from GitHub API response.")' \
+            'if not release_url:' \
+            '    raise SystemExit("Missing release html_url from GitHub API response.")' \
+            '' \
+            'meta = {' \
+            '    "UP_RELEASE_ID": str(release_id),' \
+            '    "UP_RELEASE_TAG": release_tag,' \
+            '    "UP_RELEASE_NAME": release_name,' \
+            '    "UP_RELEASE_URL": release_url,' \
+            '}' \
+            'with Path(sys.argv[2]).open("w", encoding="utf-8") as fh:' \
+            '    for key, value in meta.items():' \
+            '        fh.write(f"{key}={shlex.quote(value)}\n")' \
+            > "${SELECT_RELEASE_PY}"
+          python3 "${SELECT_RELEASE_PY}" "${RELEASES_JSON_FILE}" "${RELEASE_META_FILE}"
+          rm -f "${SELECT_RELEASE_PY}"
           . "${RELEASE_META_FILE}"
           UP_SHA="$(git rev-list -n 1 "$UP_RELEASE_TAG")"
           BUILD_RELEASE_TAG="auto-build-release-${UP_RELEASE_ID}"
@@ -90,6 +93,7 @@ jobs:
           PREVIEW_VERSION_NAME="$(date -u +'%y.%m').${UP_SHA:0:7}"
 
           EXISTING_BUILD_JSON_FILE="$(mktemp)"
+          CHECK_ASSET_PY="$(mktemp)"
           if curl -fsSL \
             -H 'Accept: application/vnd.github+json' \
             -H "Authorization: Bearer ${API_TOKEN}" \
@@ -102,18 +106,19 @@ jobs:
 
           ASSET_ALREADY_PUBLISHED=false
           if [[ "$BUILD_RELEASE_PRESENT" == "true" ]]; then
-            ASSET_ALREADY_PUBLISHED="$(python3 - "${EXISTING_BUILD_JSON_FILE}" "${EXPECTED_APK_NAME}" <<'PY'
-            import json
-            import sys
-            from pathlib import Path
-
-            data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-            expected = sys.argv[2]
-            asset_names = {asset.get("name", "") for asset in data.get("assets", [])}
-            print("true" if expected in asset_names else "false")
-            PY
-            )"
+            printf '%s\n' \
+              'import json' \
+              'import sys' \
+              'from pathlib import Path' \
+              '' \
+              'data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))' \
+              'expected = sys.argv[2]' \
+              'asset_names = {asset.get("name", "") for asset in data.get("assets", [])}' \
+              'print("true" if expected in asset_names else "false")' \
+              > "${CHECK_ASSET_PY}"
+            ASSET_ALREADY_PUBLISHED="$(python3 "${CHECK_ASSET_PY}" "${EXISTING_BUILD_JSON_FILE}" "${EXPECTED_APK_NAME}")"
           fi
+          rm -f "${CHECK_ASSET_PY}"
 
           CHANGED=true
           if [[ "$ASSET_ALREADY_PUBLISHED" == "true" ]]; then
@@ -197,47 +202,48 @@ jobs:
 
           # Keep upstream strings.xml (to avoid missing newly added keys),
           # but preserve your custom app_name from origin/main.
-          python3 - <<'PY'
-          import pathlib
-          import re
-          import subprocess
-
-          app_name = ""
-          try:
-            src = subprocess.check_output(
-              ["git", "show", "origin/main:app/src/main/res/values/strings.xml"],
-              text=True,
-              stderr=subprocess.DEVNULL,
-            )
-            m = re.search(r'<string\s+name="app_name"[^>]*>(.*?)</string>', src, flags=re.S)
-            if m:
-              app_name = m.group(1)
-          except Exception:
-            pass
-
-          if not app_name:
-            raise SystemExit(0)
-
-          targets = [
-            pathlib.Path("app/src/main/res/values/strings.xml"),
-            pathlib.Path("app/src/main/res/values-zh-rCN/strings.xml"),
-          ]
-
-          for p in targets:
-            if not p.exists():
-              continue
-            txt = p.read_text(encoding="utf-8")
-            new_txt, n = re.subn(
-              r'(<string\s+name="app_name"[^>]*>)(.*?)(</string>)',
-              r'\1' + app_name + r'\3',
-              txt,
-              count=1,
-              flags=re.S,
-            )
-            if n > 0 and new_txt != txt:
-              p.write_text(new_txt, encoding="utf-8")
-              print(f"Set app_name in {p} -> {app_name}")
-          PY
+          APP_NAME_PY="$(mktemp)"
+          printf '%s\n' \
+            'import pathlib' \
+            'import re' \
+            'import subprocess' \
+            '' \
+            'app_name = ""' \
+            'try:' \
+            '    src = subprocess.check_output([' \
+            '        "git", "show", "origin/main:app/src/main/res/values/strings.xml",' \
+            '    ], text=True, stderr=subprocess.DEVNULL)' \
+            '    m = re.search(r"<string\s+name=\"app_name\"[^>]*>(.*?)</string>", src, flags=re.S)' \
+            '    if m:' \
+            '        app_name = m.group(1)' \
+            'except Exception:' \
+            '    pass' \
+            '' \
+            'if not app_name:' \
+            '    raise SystemExit(0)' \
+            '' \
+            'targets = [' \
+            '    pathlib.Path("app/src/main/res/values/strings.xml"),' \
+            '    pathlib.Path("app/src/main/res/values-zh-rCN/strings.xml"),' \
+            ']' \
+            '' \
+            'for p in targets:' \
+            '    if not p.exists():' \
+            '        continue' \
+            '    txt = p.read_text(encoding="utf-8")' \
+            '    new_txt, n = re.subn(' \
+            '        r"(<string\s+name=\"app_name\"[^>]*>)(.*?)(</string>)",' \
+            '        r"\1" + app_name + r"\3",' \
+            '        txt,' \
+            '        count=1,' \
+            '        flags=re.S,' \
+            '    )' \
+            '    if n > 0 and new_txt != txt:' \
+            '        p.write_text(new_txt, encoding="utf-8")' \
+            '        print(f"Set app_name in {p} -> {app_name}")' \
+            > "${APP_NAME_PY}"
+          python3 "${APP_NAME_PY}"
+          rm -f "${APP_NAME_PY}"
 
           echo "${{ steps.check.outputs.up_sha }}" > .upstream-sync-sha
           echo "${{ steps.check.outputs.up_release_id }}" > .upstream-release-id
@@ -365,30 +371,32 @@ jobs:
             exit 0
           fi
           if ! {
-            APK_URL="$(python3 - <<'PY'
-            import json
-            import os
-
-            raw = os.environ.get("RELEASE_ASSETS_JSON", "").strip()
-            if not raw:
-                raise SystemExit("Missing release assets output from publish_release step.")
-
-            assets = json.loads(raw)
-            if not assets:
-                raise SystemExit("No assets were returned by publish_release step.")
-
-            apk_name = os.environ.get("APK_NAME", "").strip()
-            for asset in assets:
-                if apk_name and asset.get("name") == apk_name and asset.get("browser_download_url"):
-                    print(asset["browser_download_url"])
-                    raise SystemExit(0)
-
-            first_url = assets[0].get("browser_download_url", "").strip()
-            if not first_url:
-                raise SystemExit("Release assets do not include a browser_download_url.")
-            print(first_url)
-            PY
-            )"
+            RELEASE_ASSET_PY="$(mktemp)"
+            printf '%s\n' \
+              'import json' \
+              'import os' \
+              '' \
+              'raw = os.environ.get("RELEASE_ASSETS_JSON", "").strip()' \
+              'if not raw:' \
+              '    raise SystemExit("Missing release assets output from publish_release step.")' \
+              '' \
+              'assets = json.loads(raw)' \
+              'if not assets:' \
+              '    raise SystemExit("No assets were returned by publish_release step.")' \
+              '' \
+              'apk_name = os.environ.get("APK_NAME", "").strip()' \
+              'for asset in assets:' \
+              '    if apk_name and asset.get("name") == apk_name and asset.get("browser_download_url"):' \
+              '        print(asset["browser_download_url"])' \
+              '        raise SystemExit(0)' \
+              '' \
+              'first_url = assets[0].get("browser_download_url", "").strip()' \
+              'if not first_url:' \
+              '    raise SystemExit("Release assets do not include a browser_download_url.")' \
+              'print(first_url)' \
+              > "${RELEASE_ASSET_PY}"
+            APK_URL="$(python3 "${RELEASE_ASSET_PY}")"
+            rm -f "${RELEASE_ASSET_PY}"
             TITLE="InstallerX 自动预览构建成功"
             DESP=$'你的 InstallerX 自动预览构建已完成。\n\n'"仓库: ${{ github.repository }}"$'\n'"上游Release: ${{ steps.check.outputs.up_release_tag }}"$'\n'"预览版本: ${{ steps.check.outputs.preview_version_name }}"$'\n'"上游SHA: ${{ steps.check.outputs.up_sha }}"$'\n'"Release 链接: ${RELEASE_URL}"$'\n'"APK 下载: ${APK_URL}"$'\n'"APK 文件: ${APK_NAME}"
             curl -fsS -X POST "https://sctapi.ftqq.com/${SERVERCHAN_SENDKEY}.send" \
