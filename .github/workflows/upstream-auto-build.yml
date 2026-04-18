@@ -361,32 +361,36 @@ jobs:
             echo "::notice::SERVERCHAN_SENDKEY is not set; build succeeded, so WeChat notification was skipped."
             exit 0
           fi
-          APK_URL="$(python3 - <<'PY'
-          import json
-          import os
+          if ! {
+            APK_URL="$(python3 - <<'PY'
+            import json
+            import os
 
-          raw = os.environ.get("RELEASE_ASSETS_JSON", "").strip()
-          if not raw:
-              raise SystemExit("Missing release assets output from publish_release step.")
+            raw = os.environ.get("RELEASE_ASSETS_JSON", "").strip()
+            if not raw:
+                raise SystemExit("Missing release assets output from publish_release step.")
 
-          assets = json.loads(raw)
-          if not assets:
-              raise SystemExit("No assets were returned by publish_release step.")
+            assets = json.loads(raw)
+            if not assets:
+                raise SystemExit("No assets were returned by publish_release step.")
 
-          apk_name = os.environ.get("APK_NAME", "").strip()
-          for asset in assets:
-              if apk_name and asset.get("name") == apk_name and asset.get("browser_download_url"):
-                  print(asset["browser_download_url"])
-                  raise SystemExit(0)
+            apk_name = os.environ.get("APK_NAME", "").strip()
+            for asset in assets:
+                if apk_name and asset.get("name") == apk_name and asset.get("browser_download_url"):
+                    print(asset["browser_download_url"])
+                    raise SystemExit(0)
 
-          first_url = assets[0].get("browser_download_url", "").strip()
-          if not first_url:
-              raise SystemExit("Release assets do not include a browser_download_url.")
-          print(first_url)
-          PY
-          )"
-          TITLE="InstallerX 自动构建成功"
-          DESP=$'你的 InstallerX 自动构建已完成。\n\n'"仓库: ${{ github.repository }}"$'\n'"上游Release: ${{ steps.check.outputs.up_release_tag }}"$'\n'"上游SHA: ${{ steps.check.outputs.up_sha }}"$'\n'"Release 链接: ${RELEASE_URL}"$'\n'"APK 下载: ${APK_URL}"$'\n'"APK 文件: ${APK_NAME}"
-          curl -fsS -X POST "https://sctapi.ftqq.com/${SERVERCHAN_SENDKEY}.send" \
-            --data-urlencode "title=${TITLE}" \
-            --data-urlencode "desp=${DESP}"
+            first_url = assets[0].get("browser_download_url", "").strip()
+            if not first_url:
+                raise SystemExit("Release assets do not include a browser_download_url.")
+            print(first_url)
+            PY
+            )"
+            TITLE="InstallerX 自动构建成功"
+            DESP=$'你的 InstallerX 自动构建已完成。\n\n'"仓库: ${{ github.repository }}"$'\n'"上游Release: ${{ steps.check.outputs.up_release_tag }}"$'\n'"上游SHA: ${{ steps.check.outputs.up_sha }}"$'\n'"Release 链接: ${RELEASE_URL}"$'\n'"APK 下载: ${APK_URL}"$'\n'"APK 文件: ${APK_NAME}"
+            curl -fsS -X POST "https://sctapi.ftqq.com/${SERVERCHAN_SENDKEY}.send" \
+              --data-urlencode "title=${TITLE}" \
+              --data-urlencode "desp=${DESP}"
+          }; then
+            echo "::warning::WeChat notification failed; build and release succeeded, so notification was skipped."
+          fi
