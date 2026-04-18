@@ -157,7 +157,6 @@ jobs:
 
           CUSTOM_PATHS=(
             "apply-local-fix.ps1"
-            "app/build.gradle.kts"
             "app/src/main/ic_launcher-playstore.png"
             "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
             "app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml"
@@ -177,9 +176,6 @@ jobs:
             "app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.webp"
             "app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp"
             "app/src/main/res/values/ic_launcher_background.xml"
-            "gradle/libs.versions.toml"
-            "gradle/wrapper/gradle-wrapper.properties"
-            "settings.gradle.kts"
           )
 
           for p in "${CUSTOM_PATHS[@]}"; do
@@ -312,7 +308,7 @@ jobs:
       - name: Build Release APK
         if: steps.check.outputs.should_build == 'true'
         run: |
-          ./gradlew :app:assembleOnlineStableRelease --no-configuration-cache --refresh-dependencies --stacktrace
+          ./gradlew :app:assembleOnlineStableRelease -PAPP_ID=com.zanye.installerx --no-configuration-cache --refresh-dependencies --stacktrace
 
       - name: Prepare release asset
         id: prepare_release
