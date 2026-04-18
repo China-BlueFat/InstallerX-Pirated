@@ -1,7 +1,6 @@
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Properties
-import com.android.build.api.variant.impl.VariantOutputImpl
 
 // Get git commit hash safely, compatible with configuration cache
 val gitHash: String = try {
@@ -271,15 +270,4 @@ dependencies {
     implementation(libs.focus.api)
 
     implementation(libs.materialKolor)
-}
-
-androidComponents {
-    onVariants(selector().all()) { variant ->
-        variant.outputs.forEach { output ->
-            val vName = output.versionName.orNull ?: "0.0.0"
-            val vCode = output.versionCode.orNull ?: 0
-            val outputImpl = output as VariantOutputImpl
-            outputImpl.outputFileName.set("InstallerX-${variant.name}-v${vName}(${vCode}).apk")
-        }
-    }
 }
