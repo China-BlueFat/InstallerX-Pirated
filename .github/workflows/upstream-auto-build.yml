@@ -177,6 +177,7 @@ jobs:
             "app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.webp"
             "app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp"
             "app/src/main/res/values/ic_launcher_background.xml"
+            "gradle/libs.versions.toml"
             "gradle/wrapper/gradle-wrapper.properties"
             "settings.gradle.kts"
           )
