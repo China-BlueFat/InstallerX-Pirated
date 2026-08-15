@@ -89,7 +89,8 @@ jobs:
           . "${RELEASE_META_FILE}"
           UP_SHA="$(git rev-list -n 1 "$UP_RELEASE_TAG")"
           BUILD_RELEASE_TAG="auto-build-release-${UP_RELEASE_ID}"
-          EXPECTED_APK_NAME="InstallerX-${UP_SHA}.apk"
+          EXPECTED_APK_NAME_PREVIEW="InstallerX-Preview-${UP_SHA}.apk"
+          EXPECTED_APK_NAME_STABLE="InstallerX-Stable-${UP_SHA}.apk"
           PREVIEW_VERSION_NAME="$(date -u +'%y.%m').${UP_SHA:0:7}"
 
           EXISTING_BUILD_JSON_FILE="$(mktemp)"
@@ -112,11 +113,11 @@ jobs:
               'from pathlib import Path' \
               '' \
               'data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))' \
-              'expected = sys.argv[2]' \
+              'expected = set(sys.argv[2].split("|"))' \
               'asset_names = {asset.get("name", "") for asset in data.get("assets", [])}' \
-              'print("true" if expected in asset_names else "false")' \
+              'print("true" if expected.issubset(asset_names) else "false")' \
               > "${CHECK_ASSET_PY}"
-            ASSET_ALREADY_PUBLISHED="$(python3 "${CHECK_ASSET_PY}" "${EXISTING_BUILD_JSON_FILE}" "${EXPECTED_APK_NAME}")"
+            ASSET_ALREADY_PUBLISHED="$(python3 "${CHECK_ASSET_PY}" "${EXISTING_BUILD_JSON_FILE}" "${EXPECTED_APK_NAME_PREVIEW}|${EXPECTED_APK_NAME_STABLE}")"
           fi
           rm -f "${CHECK_ASSET_PY}"
 
@@ -136,7 +137,8 @@ jobs:
           echo "up_release_name=$UP_RELEASE_NAME" >> "$GITHUB_OUTPUT"
           echo "up_release_url=$UP_RELEASE_URL" >> "$GITHUB_OUTPUT"
           echo "build_release_tag=$BUILD_RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "expected_apk_name=$EXPECTED_APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "expected_apk_name_preview=$EXPECTED_APK_NAME_PREVIEW" >> "$GITHUB_OUTPUT"
+          echo "expected_apk_name_stable=$EXPECTED_APK_NAME_STABLE" >> "$GITHUB_OUTPUT"
           echo "build_release_present=$BUILD_RELEASE_PRESENT" >> "$GITHUB_OUTPUT"
           echo "asset_already_published=$ASSET_ALREADY_PUBLISHED" >> "$GITHUB_OUTPUT"
           echo "preview_version_name=$PREVIEW_VERSION_NAME" >> "$GITHUB_OUTPUT"
@@ -318,7 +320,8 @@ jobs:
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           if [ -z "${SIGNING_STORE_PASSWORD:-}" ] || [ -z "${SIGNING_KEY_STORE_BASE64:-}" ] || [ -z "${SIGNING_KEY_PASSWORD:-}" ] || [ -z "${SIGNING_KEY_ALIAS:-}" ]; then
-            exit 0
+            echo "::error::Missing signing secrets. Configure SIGNING_KEY_STORE_BASE64, SIGNING_STORE_PASSWORD, SIGNING_KEY_ALIAS, and SIGNING_KEY_PASSWORD in repository Settings -> Secrets and variables -> Actions."
+            exit 1
           fi
           mkdir -p keystore
           echo "${SIGNING_KEY_STORE_BASE64}" | base64 --decode > keystore/carlyu.jks
@@ -331,10 +334,10 @@ jobs:
         if: steps.check.outputs.should_build == 'true'
         run: chmod +x ./gradlew
 
-      - name: Build Preview APK
+      - name: Build Preview and Stable APKs
         if: steps.check.outputs.should_build == 'true'
         run: |
-          ./gradlew :app:assembleOnlinePreviewRelease -PAPP_ID=com.zanye.installerx -PVERSION_NAME=${{ steps.check.outputs.preview_version_name }} --no-configuration-cache --refresh-dependencies --stacktrace
+          ./gradlew :app:assemblePreviewRelease :app:assembleStableRelease -PAPP_ID=com.zanye.installerx -PVERSION_NAME=${{ steps.check.outputs.preview_version_name }} --no-configuration-cache --refresh-dependencies --stacktrace
 
       - name: Prepare release asset
         id: prepare_release
@@ -342,16 +345,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK_PATH="$(find app/build/outputs/apk/onlinePreview/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-          if [[ -z "$APK_PATH" ]]; then
-            echo "::error::No APK found under app/build/outputs/apk/onlinePreview/release."
+          PREVIEW_APK_PATH="$(find app/build/outputs/apk/preview/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          STABLE_APK_PATH="$(find app/build/outputs/apk/stable/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          if [[ -z "$PREVIEW_APK_PATH" || -z "$STABLE_APK_PATH" ]]; then
+            echo "::error::Expected both Preview and Stable APKs under app/build/outputs/apk."
             exit 1
           fi
           mkdir -p release-assets
-          RELEASE_APK="release-assets/InstallerX-${{ steps.check.outputs.up_sha }}.apk"
-          cp "$APK_PATH" "$RELEASE_APK"
-          echo "apk_path=${RELEASE_APK}" >> "$GITHUB_OUTPUT"
-          echo "apk_name=$(basename "$RELEASE_APK")" >> "$GITHUB_OUTPUT"
+          PREVIEW_RELEASE_APK="release-assets/InstallerX-Preview-${{ steps.check.outputs.up_sha }}.apk"
+          STABLE_RELEASE_APK="release-assets/InstallerX-Stable-${{ steps.check.outputs.up_sha }}.apk"
+          cp "$PREVIEW_APK_PATH" "$PREVIEW_RELEASE_APK"
+          cp "$STABLE_APK_PATH" "$STABLE_RELEASE_APK"
+          echo "apk_path=${PREVIEW_RELEASE_APK}" >> "$GITHUB_OUTPUT"
+          echo "apk_path_stable=${STABLE_RELEASE_APK}" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$(basename "$PREVIEW_RELEASE_APK")" >> "$GITHUB_OUTPUT"
+          echo "apk_name_stable=$(basename "$STABLE_RELEASE_APK")" >> "$GITHUB_OUTPUT"
 
       - name: Publish APK release
         id: publish_release
@@ -370,7 +378,9 @@ jobs:
             Preview version: ${{ steps.check.outputs.preview_version_name }}
             Workflow commit: ${{ github.sha }}
           target_commitish: ${{ github.sha }}
-          files: ${{ steps.prepare_release.outputs.apk_path }}
+          files: |
+            ${{ steps.prepare_release.outputs.apk_path }}
+            ${{ steps.prepare_release.outputs.apk_path_stable }}
           fail_on_unmatched_files: true
           prerelease: true
 
@@ -381,6 +391,7 @@ jobs:
           RELEASE_URL: ${{ steps.publish_release.outputs.url }}
           RELEASE_ASSETS_JSON: ${{ steps.publish_release.outputs.assets }}
           APK_NAME: ${{ steps.prepare_release.outputs.apk_name }}
+          APK_NAME_STABLE: ${{ steps.prepare_release.outputs.apk_name_stable }}
         shell: bash
         run: |
           set -euo pipefail
@@ -414,9 +425,10 @@ jobs:
               'print(first_url)' \
               > "${RELEASE_ASSET_PY}"
             APK_URL="$(python3 "${RELEASE_ASSET_PY}")"
+            STABLE_APK_URL="$(python3 -c 'import json,sys; assets=json.loads(sys.argv[1]); name=sys.argv[2]; print(next((a.get("browser_download_url", "") for a in assets if a.get("name") == name), ""))' "${RELEASE_ASSETS_JSON}" "${APK_NAME_STABLE}")"
             rm -f "${RELEASE_ASSET_PY}"
             TITLE="InstallerX 自动预览构建成功"
-            DESP=$'你的 InstallerX 自动预览构建已完成。\n\n'"仓库: ${{ github.repository }}"$'\n'"上游Release: ${{ steps.check.outputs.up_release_tag }}"$'\n'"预览版本: ${{ steps.check.outputs.preview_version_name }}"$'\n'"上游SHA: ${{ steps.check.outputs.up_sha }}"$'\n'"Release 链接: ${RELEASE_URL}"$'\n'"APK 下载: ${APK_URL}"$'\n'"APK 文件: ${APK_NAME}"
+            DESP=$'你的 InstallerX 自动构建已完成。\n\n'"仓库: ${{ github.repository }}"$'\n'"上游Release: ${{ steps.check.outputs.up_release_tag }}"$'\n'"上游SHA: ${{ steps.check.outputs.up_sha }}"$'\n'"Release 链接: ${RELEASE_URL}"$'\n'"Preview APK: ${APK_URL}"$'\n'"Stable APK: ${STABLE_APK_URL}"
             curl -fsS -X POST "https://sctapi.ftqq.com/${SERVERCHAN_SENDKEY}.send" \
               --data-urlencode "title=${TITLE}" \
               --data-urlencode "desp=${DESP}"
