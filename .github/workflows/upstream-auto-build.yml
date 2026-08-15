@@ -345,10 +345,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PREVIEW_APK_PATH="$(find app/build/outputs/apk/preview/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-          STABLE_APK_PATH="$(find app/build/outputs/apk/stable/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          PREVIEW_APK_PATH="$(find app/build/outputs/apk -type f -iname '*preview*.apk' | head -n 1)"
+          STABLE_APK_PATH="$(find app/build/outputs/apk -type f -iname '*stable*.apk' | head -n 1)"
           if [[ -z "$PREVIEW_APK_PATH" || -z "$STABLE_APK_PATH" ]]; then
-            echo "::error::Expected both Preview and Stable APKs under app/build/outputs/apk."
+            echo "::error::Expected both Preview and Stable APKs under app/build/outputs/apk. Found:"
+            find app/build/outputs/apk -type f -name '*.apk' -print || true
             exit 1
           fi
           mkdir -p release-assets
